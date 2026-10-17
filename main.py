@@ -20,7 +20,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# আপনার এডমিন আইডি
+# আপনার এডমিন টেলিগ্রাম আইডি
 ADMIN_ID = 7498057677
 
 WAITING_METHOD, WAITING_NUMBER, WAITING_AMOUNT = range(3)
@@ -271,7 +271,7 @@ async def method_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     context.user_data['withdraw_method'] = method_name
     
     await query.edit_message_text(
-        f"আপনি **{method_name}** সিলেক্ট করেছেন。\n\n"
+        f"আপনি **{method_name}** সিলেক্ট করেছেন।\n\n"
         f"দয়া করে আপনার **{method_name} নম্বরটি** লিখুন:",
         parse_mode="Markdown"
     )
@@ -338,8 +338,45 @@ async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_menu()
     )
     
-    # --- এডমিনের কাছে সরাসরি নোটিফিকেশন পাঠানো ---
+    # --- এডমিন আইডিতে সরাসরি নোটিফিকেশন পাঠানো ---
     try:
         admin_msg = (
             f"🚨 **নতুন পেমেন্ট রিকোয়েস্ট এসেছে!**\n\n"
-            f"👤 **ইউজার:** {first_
+            f"👤 **ইউজার:** {first_name} ({username})\n"
+            f"🆔 **User ID:** `{user_id}`\n"
+            f"🏦 **মেথড:** {method}\n"
+            f"📱 **নম্বর:** `{number}`\n"
+            f"💎 **পয়েন্ট:** {amount}\n"
+            f"⏰ **সময়:** {datetime.now().strftime('%Y-%m-%d %I:%M %p')}"
+        )
+        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Failed to send admin notification: {e}")
+
+    return ConversationHandler.END
+
+def main():
+    TOKEN = "8955275739:AAEZP7iXFE7ODzztCq-EtdYAeVgv5BBxJO8"
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    withdraw_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^💸 উত্তোলন$"), start_withdraw)],
+        states={
+            WAITING_METHOD: [CallbackQueryHandler(method_callback_handler, pattern="^method_")],
+            WAITING_NUMBER: [MessageHandler(filters.TEXT & (~filters.COMMAND), get_number)],
+            WAITING_AMOUNT: [MessageHandler(filters.TEXT & (~filters.COMMAND), get_amount)],
+        },
+        fallbacks=[CommandHandler("start", start)]
+    )
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(withdraw_handler)
+    app.add_handler(CallbackQueryHandler(task_callback_handler, pattern="^claim_task_"))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_menu))
+
+    print("বট সফলভাবে চালু হচ্ছে...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
