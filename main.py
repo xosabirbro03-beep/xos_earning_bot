@@ -20,7 +20,10 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-WAITING_NUMBER, WAITING_AMOUNT = range(2)
+# আপনার এডমিন আইডি
+ADMIN_ID = 7498057677
+
+WAITING_METHOD, WAITING_NUMBER, WAITING_AMOUNT = range(3)
 
 def init_db():
     conn = sqlite3.connect('mining_bot_v3.db')
@@ -65,7 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     await update.message.reply_text(
-        "স্বাগতম! 🤖 XOS EARNING Mining Bot এ আপনাকে স্বাগতম。\n\n"
+        "স্বাগতম! 🤖 XOS EARNING Mining Bot এ আপনাকে স্বাগতম।\n\n"
         "নিচের মেনু থেকে আপনার পছন্দমতো অপশন বেছে নিন:",
         reply_markup=get_main_menu()
     )
@@ -216,6 +219,7 @@ async def task_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             
     conn.close()
 
+# --- Withdrawal Flow ---
 async def start_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -226,24 +230,52 @@ async def start_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = row[0] if row else 0
     conn.close()
 
-    if balance < 10000:
+    if balance < 100:
         await update.message.reply_text(
             f"❌ আপনার পয়েন্ট পর্যাপ্ত নয়!\n\n"
             f"💰 আপনার বর্তমান ব্যালেন্স: {balance} পয়েন্ট\n"
-            f"⚠️ সর্বনিম্ন উত্তোলন সীমা: ১০,০০০ (10000) পয়েন্ট。\n\n"
+            f"⚠️ সর্বনিম্ন উত্তোলন সীমা: ১০০ (100) পয়েন্ট।\n\n"
             f"দয়া করে টাস্ক পূরণ করে বা মাইনিং করে পয়েন্ট অর্জন করুন।",
             reply_markup=get_main_menu()
         )
         return ConversationHandler.END
     else:
+        keyboard = [
+            [InlineKeyboardButton("বিকাশ (bKash)", callback_data="method_bkash")],
+            [InlineKeyboardButton("নগদ (Nagad)", callback_data="method_nagad")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.message.reply_text(
             f"💸 **উত্তোলন সার্ভিস**\n\n"
             f"💰 আপনার ব্যালেন্স: {balance} পয়েন্ট\n"
-            f"⚠️ সর্বনিম্ন উত্তোলন: ১০,০০০ পয়েন্ট\n\n"
-            f"আপনার **বিকাশ বা নগদ নম্বরটি** টাইপ করে পাঠান:",
-            parse_mode="Markdown"
+            f"⚠️ সর্বনিম্ন উত্তোলন: ১০০ পয়েন্ট\n\n"
+            f"পেমেন্ট নেওয়ার জন্য নিচের যেকোনো একটি অপশন সিলেক্ট করুন:",
+            parse_mode="Markdown",
+            reply_markup=reply_markup
         )
-        return WAITING_NUMBER
+        return WAITING_METHOD
+
+async def method_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    if data == "method_bkash":
+        method_name = "বিকাশ (bKash)"
+    elif data == "method_nagad":
+        method_name = "নগদ (Nagad)"
+    else:
+        return WAITING_METHOD
+
+    context.user_data['withdraw_method'] = method_name
+    
+    await query.edit_message_text(
+        f"আপনি **{method_name}** সিলেক্ট করেছেন。\n\n"
+        f"দয়া করে আপনার **{method_name} নম্বরটি** লিখুন:",
+        parse_mode="Markdown"
+    )
+    return WAITING_NUMBER
 
 async def get_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     number = update.message.text
@@ -251,17 +283,21 @@ async def get_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         f"নম্বর গ্রহণ করা হয়েছে: `{number}`\n\n"
-        f"আপনি কত পয়েন্ট উত্তোলন করতে চাচ্ছেন? (পয়েন্টের সংখ্যাটি লিখুন):",
+        f"কত পয়েন্ট উত্তোলন করতে চান? (সংখ্যায় লিখুন, যেমন: 100):",
         parse_mode="Markdown"
     )
     return WAITING_AMOUNT
 
 async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
+    username = f"@{user.username}" if user.username else "নাই"
+    first_name = user.first_name
+    
     amount_text = update.message.text
     
     if not amount_text.isdigit():
-        await update.message.reply_text("❌ দয়া করে শুধুমাত্র সংখ্যা লিখুন (যেমন: 10000)। আবার চেষ্টা করুন:")
+        await update.message.reply_text("❌ দয়া করে শুধুমাত্র সংখ্যা লিখুন (যেমন: 100)। আবার চেষ্টা করুন:")
         return WAITING_AMOUNT
         
     amount = int(amount_text)
@@ -272,8 +308,8 @@ async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = cursor.fetchone()
     balance = row[0] if row else 0
     
-    if amount < 10000:
-        await update.message.reply_text("❌ সর্বনিম্ন ১০,০০০ পয়েন্ট উত্তোলন করতে পারবেন। আবার পয়েন্ট পরিমাণ লিখুন:")
+    if amount < 100:
+        await update.message.reply_text("❌ সর্বনিম্ন ১০০ পয়েন্ট উত্তোলন করতে পারবেন। আবার পয়েন্ট পরিমাণ লিখুন:")
         conn.close()
         return WAITING_AMOUNT
         
@@ -283,14 +319,17 @@ async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAITING_AMOUNT
 
     new_balance = balance - amount
-    cursor.execute('UPDATE users SET balance = ? WHERE user_id = ?', (new_balance, user_id))
+    cursor.execute('UPDATE users SET balance = ? WHERE user_id = ?', (user_id,))
     conn.commit()
     conn.close()
     
+    method = context.user_data.get('withdraw_method', 'মোবাইল ব্যাংকিং')
     number = context.user_data.get('withdraw_number')
     
+    # --- ইউজারকে কনফার্মেশন মেসেজ ---
     await update.message.reply_text(
-        f"✅ **উত্তোলন রিকোয়েস্ট সফল হয়েছে!**\n\n"
+        f"✅ **পেমেন্ট রিকোয়েস্ট সাবমিট হয়েছে!**\n\n"
+        f"উত্তোলন মাধ্যম: {method}\n"
         f"📱 নম্বর: `{number}`\n"
         f"💎 পয়েন্ট: {amount}\n"
         f"💰 অবশিষ্ট ব্যালেন্স: {new_balance} পয়েন্ট\n\n"
@@ -298,29 +337,9 @@ async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=get_main_menu()
     )
-    return ConversationHandler.END
-
-def main():
-    TOKEN = "8955275739:AAEZP7iXFE7ODzztCq-EtdYAeVgv5BBxJO8"
-
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    withdraw_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^💸 উত্তোলন$"), start_withdraw)],
-        states={
-            WAITING_NUMBER: [MessageHandler(filters.TEXT & (~filters.COMMAND), get_number)],
-            WAITING_AMOUNT: [MessageHandler(filters.TEXT & (~filters.COMMAND), get_amount)],
-        },
-        fallbacks=[CommandHandler("start", start)]
-    )
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(withdraw_handler)
-    app.add_handler(CallbackQueryHandler(task_callback_handler, pattern="^claim_task_"))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_menu))
-
-    print("বট সফলভাবে চালু হচ্ছে...")
-    app.run_polling()
-
-if __name__ == '__main__':
-    main()
+    
+    # --- এডমিনের কাছে সরাসরি নোটিফিকেশন পাঠানো ---
+    try:
+        admin_msg = (
+            f"🚨 **নতুন পেমেন্ট রিকোয়েস্ট এসেছে!**\n\n"
+            f"👤 **ইউজার:** {first_
